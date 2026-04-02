@@ -1,0 +1,32 @@
+package com.api.financial_operations_system.domain.user;
+
+import com.api.financial_operations_system.domain.company.Company;
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+
+import java.util.UUID;
+
+@Entity
+@Table(name="users")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class User {
+
+    @Id
+    private UUID id;
+
+    private String email;
+
+    @Enumerated(EnumType.STRING)
+    private Role role;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name="company_id", nullable = false)
+    private Company company;
+}
