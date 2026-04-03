@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface FinancialOrderRepository extends JpaRepository<FinancialOrder, UUID> {
-    Optional<FinancialOrder> findByIdCompany_Id(UUID id, UUID company_id);
+    Optional<FinancialOrder> findByIdAndCompany_Id(UUID id, UUID company_id);
 
     Page<FinancialOrder> findAllByCompany_Id(UUID company_id, Pageable pageable);
 

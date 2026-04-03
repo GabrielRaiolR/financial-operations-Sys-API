@@ -21,11 +21,13 @@ public class FinancialOrderService {
 
     private final FinancialOrderRepository financialOrderRepository;
     private final CompanyRepository companyRepository;
+    private final CurrentUserService currentUserService;
 
     public FinancialOrderResponse createFinancialOrder(CreateFinancialOrderRequest request) {
+        UUID companyId = currentUserService.requireCompanyId();
         LocalDateTime now = LocalDateTime.now();
 
-        Company company = companyRepository.findById(request.companyId())
+        Company company = companyRepository.findById(companyId)
                 .orElseThrow(() -> new IllegalArgumentException("Company not found"));
 
         FinancialOrder order = FinancialOrder.builder()
@@ -50,6 +52,24 @@ public class FinancialOrderService {
                 saved.getDescription(),
                 saved.getCreatedAt(),
                 saved.getUpdatedAt()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public FinancialOrderResponse getById(UUID id) {
+        UUID companyId = currentUserService.requireCompanyId();
+        FinancialOrder order =  financialOrderRepository.findByIdAndCompany_Id(id, companyId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+        Company company = order.getCompany();
+        return new FinancialOrderResponse(
+                order.getId(),
+                company.getId(),
+                order.getAmount(),
+                order.getOrderType(),
+                order.getOrderStatus(),
+                order.getDescription(),
+                order.getCreatedAt(),
+                order.getUpdatedAt()
         );
     }
 }
