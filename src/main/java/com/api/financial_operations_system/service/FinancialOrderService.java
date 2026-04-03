@@ -9,12 +9,14 @@ import com.api.financial_operations_system.repository.CompanyRepository;
 import com.api.financial_operations_system.repository.FinancialOrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class FinancialOrderService {
 
     private final FinancialOrderRepository financialOrderRepository;
@@ -41,7 +43,7 @@ public class FinancialOrderService {
 
         return new FinancialOrderResponse(
                 saved.getId(),
-                saved.getCompany().getId(),
+                company.getId(),
                 saved.getAmount(),
                 saved.getOrderType(),
                 saved.getOrderStatus(),
