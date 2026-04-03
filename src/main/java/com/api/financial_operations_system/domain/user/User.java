@@ -28,4 +28,7 @@ public class User {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name="company_id", nullable = false)
     private Company company;
+
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
 }
