@@ -10,9 +10,6 @@ import java.util.UUID;
 
 public record CreateFinancialOrderRequest(
         @NotNull
-        UUID companyId,
-
-        @NotNull
         OrderType type,
 
         @NotNull
