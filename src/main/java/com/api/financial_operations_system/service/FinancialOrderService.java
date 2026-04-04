@@ -8,6 +8,8 @@ import com.api.financial_operations_system.dto.order.FinancialOrderResponse;
 import com.api.financial_operations_system.repository.CompanyRepository;
 import com.api.financial_operations_system.repository.FinancialOrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,23 +45,56 @@ public class FinancialOrderService {
 
         FinancialOrder saved = financialOrderRepository.save(order);
 
-        return new FinancialOrderResponse(
-                saved.getId(),
-                company.getId(),
-                saved.getAmount(),
-                saved.getOrderType(),
-                saved.getOrderStatus(),
-                saved.getDescription(),
-                saved.getCreatedAt(),
-                saved.getUpdatedAt()
-        );
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
     public FinancialOrderResponse getById(UUID id) {
         UUID companyId = currentUserService.requireCompanyId();
-        FinancialOrder order =  financialOrderRepository.findByIdAndCompany_Id(id, companyId)
+        FinancialOrder order = financialOrderRepository.findByIdAndCompany_Id(id, companyId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+        return toResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<FinancialOrderResponse> list(UUID companyId,OrderStatus status,Pageable pageable) {
+        Page<FinancialOrder> page = status == null
+                ?
+                financialOrderRepository.findAllByCompany_Id(companyId, pageable):
+                financialOrderRepository.findAllByCompany_IdAndOrderStatus(companyId,status, pageable);
+        return page.map(this::toResponse);
+    }
+
+    @Transactional
+    public FinancialOrderResponse approve(UUID companyId, UUID orderId) {
+        FinancialOrder order = financialOrderRepository.findByIdAndCompany_Id(orderId, companyId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+        if (order.getOrderStatus() != OrderStatus.PENDING) {
+            throw new IllegalStateException("Only pending orders can be approved");
+        }
+        order.setOrderStatus(OrderStatus.APPROVED);
+        order.setUpdatedAt(LocalDateTime.now());
+        return toResponse(financialOrderRepository.save(order));
+    }
+
+    @Transactional
+    public FinancialOrderResponse reject(UUID companyId, UUID orderId, String reason) {
+        FinancialOrder order = financialOrderRepository.findByIdAndCompany_Id(orderId, companyId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+        if (order.getOrderStatus() != OrderStatus.PENDING) {
+            throw new IllegalStateException("Only pending orders can be rejected");
+        }
+        order.setOrderStatus(OrderStatus.REJECTED);
+        order.setUpdatedAt(LocalDateTime.now());
+        if (reason != null && !reason.isEmpty()) {
+            String desc = order.getDescription();
+            String suffix = "[Rejeição]" + reason.trim();
+            order.setDescription(desc == null || desc.isBlank() ? suffix : desc + " | " + suffix);
+        }
+        return toResponse(financialOrderRepository.save(order));
+    }
+
+    private FinancialOrderResponse toResponse(FinancialOrder order) {
         Company company = order.getCompany();
         return new FinancialOrderResponse(
                 order.getId(),
@@ -72,4 +107,5 @@ public class FinancialOrderService {
                 order.getUpdatedAt()
         );
     }
+
 }

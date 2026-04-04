@@ -30,7 +30,7 @@ public class JwtTokenService {
         UUID companyId = user.getCompany().getId();
         return Jwts.builder()
                 .subject(user.getId().toString())
-                .claim("CompanyId", companyId.toString())
+                .claim("companyId", companyId.toString())
                 .claim("role",user.getRole().name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
