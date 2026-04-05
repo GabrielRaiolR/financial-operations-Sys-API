@@ -23,6 +23,7 @@ public class User {
     private String email;
 
     @Enumerated(EnumType.STRING)
+    @Column(length = 50)
     private Role role;
 
     @ManyToOne(fetch = FetchType.LAZY)
