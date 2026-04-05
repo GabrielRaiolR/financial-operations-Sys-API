@@ -5,9 +5,11 @@ import com.api.financial_operations_system.domain.order.FinancialOrder;
 import com.api.financial_operations_system.domain.order.OrderStatus;
 import com.api.financial_operations_system.dto.order.CreateFinancialOrderRequest;
 import com.api.financial_operations_system.dto.order.FinancialOrderResponse;
+import com.api.financial_operations_system.events.FinancialOrderCreatedEvent;
 import com.api.financial_operations_system.repository.CompanyRepository;
 import com.api.financial_operations_system.repository.FinancialOrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ public class FinancialOrderService {
     private final FinancialOrderRepository financialOrderRepository;
     private final CompanyRepository companyRepository;
     private final CurrentUserService currentUserService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public FinancialOrderResponse createFinancialOrder(CreateFinancialOrderRequest request) {
         UUID companyId = currentUserService.requireCompanyId();
@@ -44,7 +47,7 @@ public class FinancialOrderService {
                 .build();
 
         FinancialOrder saved = financialOrderRepository.save(order);
-
+        eventPublisher.publishEvent(new FinancialOrderCreatedEvent(saved));
         return toResponse(saved);
     }
 
