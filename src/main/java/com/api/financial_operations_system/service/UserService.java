@@ -106,7 +106,7 @@ public class UserService {
 
     public void delete(UUID id) {
         UUID companyId = currentUserService.requireCompanyId();
-        UUID currentUserId = currentUserService.requireUserId(); // assuma método no CurrentUserService (claim sub)
+        UUID currentUserId = currentUserService.requireUserId();
         if (id.equals(currentUserId)) {
             throw new IllegalStateException("Não pode desativar a própria conta");
         }
