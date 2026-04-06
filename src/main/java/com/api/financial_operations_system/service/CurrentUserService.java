@@ -40,6 +40,27 @@ public class CurrentUserService {
         }
     }
 
+    public UUID requireUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!(auth instanceof JwtAuthenticationToken jwtAuth)) {
+            throw new IllegalStateException("JWT authentication required");
+        }
+        Jwt jwt = jwtAuth.getToken();
+        String sub = jwt.getSubject();
+        if (sub == null || sub.isBlank()) {
+            sub = jwt.getClaimAsString("sub");
+        }
+        if (sub == null || sub.isBlank()) {
+            throw new IllegalStateException(
+                    "Token sem subject (sub). Faça login de novo e use Authorization: Bearer <token>.");
+        }
+        try {
+            return UUID.fromString(sub.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Valor inválido no subject (sub) do token: " + sub, e);
+        }
+    }
+
     private static String firstNonBlank(String a, String b) {
         if (a != null && !a.isBlank()) {
             return a;

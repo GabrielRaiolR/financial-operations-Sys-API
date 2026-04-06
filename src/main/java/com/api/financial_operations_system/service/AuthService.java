@@ -18,18 +18,18 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
 
-    @org.springframework.beans.factory.annotation.Value("${app.jwt.experiation-minutes:1140}")
+    @org.springframework.beans.factory.annotation.Value("${app.jwt.expiration-minutes:1440}")
     private long expiresInMinutes;
 
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmailIgnoreCase(request.email())
+        User user = userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull(request.email())
                 .orElseThrow(()
                         -> new BadCredentialsException("Invalid credentials"));
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BadCredentialsException("Invalid credentials");
         }
         String token = jwtTokenService.createToken(user);
-        return new LoginResponse(token, "Bearer ", expiresInMinutes);
+        return new LoginResponse(token, "Bearer", expiresInMinutes);
     }
 
 }
