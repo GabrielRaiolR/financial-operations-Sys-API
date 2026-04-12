@@ -32,14 +32,14 @@ public class FinancialOrderController {
     }
 
     @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<FinancialOrderResponse> approve(@PathVariable UUID id) {
         UUID companyId = currentUserService.requireCompanyId();
         return ResponseEntity.ok(financialOrderService.approve(companyId, id));
     }
 
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<FinancialOrderResponse> reject(@PathVariable UUID id, @RequestBody(required = false) RejectFinancialOrderRequest body) {
         UUID companyId = currentUserService.requireCompanyId();
         String reason = body != null ? body.reason() : null;

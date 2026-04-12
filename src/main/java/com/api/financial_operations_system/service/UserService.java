@@ -126,6 +126,7 @@ public class UserService {
                 user.getEmail(),
                 user.getRole(),
                 user.getCompany().getId(),
+                user.getCompany().getName(),
                 user.getDeletedAt() == null);
     }
 }

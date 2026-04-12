@@ -9,6 +9,7 @@ public record UserResponse(
         String email,
         Role role,
         UUID companyId,
+        String companyName,
         boolean active
 ) {
 }

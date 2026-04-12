@@ -8,7 +8,7 @@ Backend **REST** em Spring Boot para **gestão de ordens financeiras** em contex
 
 Permitir que **várias empresas** usem a mesma API sem ver dados umas das outras: cada utilizador autenticado está ligado a uma **`Company`**, e o **`companyId`** vai no **JWT**. Sobre isso assentam:
 
-- **Ordens financeiras** (`FinancialOrder`): criação, listagem filtrada por empresa e estado, **aprovação** e **rejeição** com regras de papel (**ADMIN** / **FINANCE**).
+- **Ordens financeiras** (`FinancialOrder`): criação e listagem filtrada por empresa e estado para utilizadores autenticados (**ADMIN** e **FINANCE**); **aprovação** e **rejeição** de ordens pendentes **apenas** com papel **ADMIN** (separação de funções: **FINANCE** opera ordens, **ADMIN** decide o fluxo de aprovação).
 - **Utilizadores**: registo público que cria **empresa + primeiro admin**, **login**, e **CRUD administrativo** de users no mesmo tenant (*soft delete*, sem expor passwords nas respostas).
 - **Empresas**: criação adicional via API (além do bootstrap do registo).
 - **Câmbio**: endpoint de **consulta** a taxa de referência (integração externa com **cache** e **resiliência**).
@@ -40,7 +40,7 @@ Permitir que **várias empresas** usem a mesma API sem ver dados umas das outras
 - **`POST /financial-orders`**: cria ordem em **PENDING** (e aplica regra de autoaprovação quando o montante está dentro do limite da empresa).
 - **`GET /financial-orders`**: listagem **paginada**, opcionalmente por **`status`**, sempre no âmbito da empresa do token.
 - **`GET /financial-orders/{id}`**: detalhe com isolamento de tenant.
-- **`POST .../{id}/approve`** e **`POST .../{id}/reject`**: transições de estado com **`@PreAuthorize`** (**ADMIN** e/ou **FINANCE** conforme definido no controller).
+- **`POST .../{id}/approve`** e **`POST .../{id}/reject`**: transições **`PENDING` → `APPROVED` / `REJECTED`** com **`@PreAuthorize("hasRole('ADMIN')")`** — utilizadores **FINANCE** recebem **403** nestes endpoints.
 
 ### Utilizadores (administração)
 
@@ -154,7 +154,7 @@ Ou executar a classe **`FinancialOperationsSystemApplication`** na IDE.
 
 **Nota para testes manuais:** cada **`POST /auth/register`** cria uma **nova** empresa. Para adicionar colaboradores a uma empresa **já existente**, faz **login** como **ADMIN** dessa empresa e usa **`POST /users`** (o novo utilizador fica no mesmo `companyId` do token).
 
-**Sugestão de ordem no Postman:** `GET /actuator/health` → `POST /auth/login` (ou `register` se quiseres um tenant novo) → pedidos autenticados → `GET /users` → `POST /users` (ex. FINANCE) → fluxo de ordens (criar → listar → aprovar/rejeitar) → `GET /fx/rate` → cenários negativos (sem token, email duplicado, *soft delete* + login falhado).
+**Sugestão de ordem no Postman:** `GET /actuator/health` → `POST /auth/login` como **ADMIN** (ou `register` se quiseres um tenant novo) → pedidos autenticados → `GET /users` → `POST /users` (ex. FINANCE) → com token **FINANCE**: criar/listar ordens (aprovar/rejeitar deve falhar **403**) → voltar a **ADMIN** para `approve`/`reject` → `GET /fx/rate` → cenários negativos (sem token, email duplicado, *soft delete* + login falhado).
 
 ---
 

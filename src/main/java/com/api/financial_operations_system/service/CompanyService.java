@@ -16,6 +16,7 @@ import java.util.UUID;
 public class CompanyService {
 
     private final CompanyRepository companyRepository;
+    private final CurrentUserService currentUserService;
 
     public CompanyResponse createCompany(CreateCompanyRequest request) {
         Company company = Company.builder()
@@ -25,5 +26,16 @@ public class CompanyService {
         Company saved = companyRepository.save(company);
 
         return new CompanyResponse(saved.getId(), saved.getName());
+    }
+
+    @Transactional(readOnly = true)
+    public CompanyResponse getById(UUID id) {
+        UUID tenantId = currentUserService.requireCompanyId();
+        if (!tenantId.equals(id)) {
+            throw new IllegalArgumentException("Company not found");
+        }
+        Company company = companyRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Company not found"));
+        return new CompanyResponse(company.getId(), company.getName());
     }
 }
