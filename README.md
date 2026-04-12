@@ -1,164 +1,172 @@
 # Financial Operations System
 
-Backend **REST** em Spring Boot para **gestão de ordens financeiras** em contexto empresarial (contas a pagar/receber, estados de aprovação, isolamento por organização). Projeto pensado para **portfolio** e aprendizagem — nível **júnior**, com foco em boas práticas comuns em APIs corporativas (multi-tenant, JWT, mensageria, migrações).
+**REST** backend built with **Spring Boot** for **financial order** management in a business context (accounts payable/receivable–style flows, approval states, organization isolation). Intended as a **portfolio** and learning project—**junior** level—with common enterprise API patterns (multi-tenant via JWT, messaging, migrations, external FX with cache and resilience).
 
 ---
 
-## Objetivo do sistema
+## What the system does
 
-Permitir que **várias empresas** usem a mesma API sem ver dados umas das outras: cada utilizador autenticado está ligado a uma **`Company`**, e o **`companyId`** vai no **JWT**. Sobre isso assentam:
+Several **companies** share one API without seeing each other’s data: each authenticated user belongs to a **`Company`**, and **`companyId`** is carried in the **JWT**. On top of that:
 
-- **Ordens financeiras** (`FinancialOrder`): criação e listagem filtrada por empresa e estado para utilizadores autenticados (**ADMIN** e **FINANCE**); **aprovação** e **rejeição** de ordens pendentes **apenas** com papel **ADMIN** (separação de funções: **FINANCE** opera ordens, **ADMIN** decide o fluxo de aprovação).
-- **Utilizadores**: registo público que cria **empresa + primeiro admin**, **login**, e **CRUD administrativo** de users no mesmo tenant (*soft delete*, sem expor passwords nas respostas).
-- **Empresas**: criação adicional via API (além do bootstrap do registo).
-- **Câmbio**: endpoint de **consulta** a taxa de referência (integração externa com **cache** e **resiliência**).
+- **Financial orders** (`FinancialOrder`): create, paginated list (optional **`status`** filter), and detail for authenticated users; **approve** and **reject** **pending** orders are **ADMIN-only** (**FINANCE** gets **403** on those endpoints—separation of duties).
+- **Users**: public **register** bootstraps **company + first ADMIN**; **login**; **ADMIN** CRUD for users in the same tenant (*soft delete*; passwords never returned).
+- **Companies**: additional creation via API (beyond register bootstrap); **GET** by id scoped to the JWT tenant.
+- **FX**: **reference rate** lookup (external API with **Caffeine** cache and **Resilience4j**).
 
 ---
 
-## O que está implementado (visão por blocos)
+## Implemented areas (by layer)
 
-### Domínio e persistência
+### Domain and persistence
 
-- Entidades **`Company`** (incl. `autoApprovalLimit` para política de autoaprovação na criação de ordens), **`User`** (email, hash BCrypt, `Role`, vínculo à empresa, **`deletedAt`** para *soft delete*), **`FinancialOrder`** (tipo, valor, descrição, estado do fluxo).
-- **Spring Data JPA** com repositórios que filtram por **`company_id`** (e por utilizador ativo onde aplicável).
-- **Flyway**: `V1__initial_schema.sql` (esquema base), `V2__users_soft_delete.sql` (coluna `deleted_at` e índice útil para listagens).
+- Entities **`Company`** (includes **`autoApprovalLimit`** in the schema for a future auto-approval policy; **order creation currently always starts as `PENDING`**—the limit is not applied in service logic yet), **`User`** (email, BCrypt hash, `Role`, company link, **`deletedAt`** for soft delete), **`FinancialOrder`** (type, amount, description, workflow status).
+- **Spring Data JPA** repositories scoped by **`company_id`** (and active users where relevant).
+- **Flyway**: `V1__initial_schema.sql` (base schema), `V2__users_soft_delete.sql` (`deleted_at` and supporting index).
 
-### Segurança e autenticação
+### Security and authentication
 
-- **`POST /auth/login`**: valida credenciais, emite **JWT** assinado (JJWT) com **`sub`** (id do user), **`companyId`**, **`role`**.
-- **`POST /auth/register`**: público; cria **nova** `Company` + primeiro **`User`** como **ADMIN** e devolve token (bootstrap de organização).
-- **OAuth2 Resource Server**: pedidos autenticados com `Authorization: Bearer …`; rotas públicas: **`/auth/login`**, **`/auth/register`**, **`/actuator/health`**.
-- **BCrypt** para passwords; respostas **não** devolvem hash nem password em claro.
+- **`POST /auth/login`**: validates credentials, issues **JWT** (JJWT) with **`sub`** (user id), **`companyId`**, **`role`**.
+- **`POST /auth/register`**: public; creates **`Company`** + first **`User`** as **ADMIN**, returns token (organization bootstrap).
+- **OAuth2 Resource Server**: `Authorization: Bearer …` for protected routes; public: **`/auth/login`**, **`/auth/register`**, **`/actuator/health`**.
+- **BCrypt** for passwords; responses never include hash or plaintext password.
 
 ### Multi-tenant
 
-- Serviços críticos resolvem o tenant com **`CurrentUserService`** a partir do **JWT** (não confiam em `companyId` enviado pelo cliente em DTOs de criação de ordem).
-- Consultas a ordens e a utilizadores respeitam o **mesmo** `companyId` do token; token de outra empresa **não** acede a recursos alheios.
+- Services resolve the tenant with **`CurrentUserService`** from the **JWT** (e.g. order creation does not trust client-supplied `companyId`).
+- Order and user queries use the **same** `companyId` as the token.
 
-### Workflow de ordens financeiras
+### Financial order workflow
 
-- **`POST /financial-orders`**: cria ordem em **PENDING** (e aplica regra de autoaprovação quando o montante está dentro do limite da empresa).
-- **`GET /financial-orders`**: listagem **paginada**, opcionalmente por **`status`**, sempre no âmbito da empresa do token.
-- **`GET /financial-orders/{id}`**: detalhe com isolamento de tenant.
-- **`POST .../{id}/approve`** e **`POST .../{id}/reject`**: transições **`PENDING` → `APPROVED` / `REJECTED`** com **`@PreAuthorize("hasRole('ADMIN')")`** — utilizadores **FINANCE** recebem **403** nestes endpoints.
+- **`POST /financial-orders`**: creates an order in **`PENDING`**.
+- **`GET /financial-orders`**: paginated list, optional **`status`**, always within the token’s company.
+- **`GET /financial-orders/{id}`**: detail with tenant isolation.
+- **`POST /financial-orders/{id}/approve`** and **`POST /financial-orders/{id}/reject`**: **`PENDING` → `APPROVED` / `REJECTED`** with **`@PreAuthorize("hasRole('ADMIN')")`**; reject accepts an optional JSON body (`reason`) on **`RejectFinancialOrderRequest`**.
 
-### Utilizadores (administração)
+### User administration
 
-- **`/users`**: apenas **`ROLE_ADMIN`** — listagem paginada, detalhe, criação (**POST**), atualização parcial (**PATCH**), remoção lógica (**DELETE** → preenche `deleted_at`).
-- Regras: email único entre ativos; não desativar o **último ADMIN** da empresa nem **a própria** conta pelo mesmo fluxo; login não autentica utilizadores *soft deleted*.
+- **`/users`**: **`ROLE_ADMIN` only**—paginated list, detail, **POST** create, **PATCH** update, **DELETE** soft-deletes (`deleted_at`).
+- Rules include: unique email among active users; cannot remove the **last ADMIN** or **your own** account through that flow; soft-deleted users cannot log in.
 
-### Mensageria (RabbitMQ)
+### Messaging (RabbitMQ)
 
-- Após **commit** bem-sucedido da criação de ordem, publicação de evento de domínio (listener com **`@TransactionalEventListener(phase = AFTER_COMMIT)`** para não publicar se a transação falhar).
-- Configuração de exchange/fila/binding no pacote de messaging (nomes centralizados).
+- After a **successful transaction commit** on order creation, a domain event is published (**`@TransactionalEventListener(phase = AFTER_COMMIT)`** so nothing is sent if the transaction rolls back).
+- Exchange/queue/binding names are centralized (e.g. **`RabbitMqNames`**).
+- **`FinancialOrderAmqpListener`** logs consumed messages (example async consumer).
 
-### Tratamento de erros
+### Error handling
 
-- **`GlobalExceptionHandler`** + **`ApiError`**: respostas JSON consistentes para validação (**400** com `fieldErrors`), **401** (credenciais), **403** (acesso negado), **400** para vários erros de negócio mapeados via `IllegalArgumentException` (há espaço para evoluir para **404**/**409** mais explícitos no futuro).
+- **`GlobalExceptionHandler`** + **`ApiError`**: consistent JSON for validation (**400** with `fieldErrors`), **401**, **403**, and business errors often mapped via **`IllegalArgumentException`** / **`IllegalStateException`** (room to evolve toward **404**/**409** later).
 
-### Integração FX (Frankfurter)
+### FX integration (Frankfurter)
 
-- **`GET /fx/rate`**: parâmetros `from` / `to`.
-- **RestClient**, **cache Caffeine** (TTL configurável), **Resilience4j** (circuit breaker + retry em leituras) para não depender de falhas repetidas da API externa.
+- **`GET /fx/rate`**: query params **`from`** / **`to`**.
+- **RestClient**, **Caffeine** cache (TTL from config), **Resilience4j** (circuit breaker + retry) for the external **`app.fx.frankfurter-base-url`** (default `https://api.frankfurter.app`).
 
-### Observabilidade
+### Observability
 
-- **Filtro de correlation id** (header propagado ao **MDC**; padrão de log em consola com `%X{correlationId}`).
-- **Actuator**: exposição mínima de **`health`** (adequado a probes).
+- **Correlation id** filter (header → **MDC**; console pattern uses `%X{correlationId}`).
+- **Actuator**: **`health`** exposed (suitable for probes).
 
-### Testes automatizados
+### Automated tests
 
-- Testes unitários/integração onde existem no módulo (ex.: serviços de FX); comando padrão Maven abaixo.
+- Unit/integration tests where present (e.g. FX service); use Maven below.
 
 ---
 
-## Estrutura do código (pacotes)
+## Code layout (packages)
 
 ```
 com.api.financial_operations_system
 ├── config          # Security, JWT decoder, RabbitMQ, FX client, correlation id
 ├── controller      # REST
-├── domain          # Entidades e enums
-├── dto             # Pedidos/respostas e erros
+├── domain          # Entities and enums
+├── dto             # Requests/responses and errors
+├── events          # Domain events
 ├── exception       # GlobalExceptionHandler
-├── integration     # Clientes HTTP externos (FX)
-├── messaging       # Publicação/consumo AMQP
+├── integration     # External HTTP (FX)
+├── messaging       # AMQP publish/consume
 ├── repository      # Spring Data
-├── security        # Emissão de JWT
-├── service         # Regras de negócio
-└── events          # Eventos de domínio (quando aplicável)
+├── security        # JWT issuance
+└── service         # Business logic
 ```
 
 ---
 
-## Stack técnica
+## Tech stack
 
-| Tecnologia | Uso |
-|------------|-----|
-| Java **21** | Linguagem |
-| Spring Boot **3.5.x** | Web, JPA, Security, Validation, Actuator, AMQP, Cache, AOP |
-| PostgreSQL | Base de dados |
-| Flyway | Migrações versionadas |
-| RabbitMQ | Filas (eventos pós-commit) |
-| jjwt | Construção do JWT no login/registo |
-| Caffeine | Cache de cotações |
-| Resilience4j | Circuit breaker + retry no cliente FX |
-| Lombok | Redução de boilerplate nas entidades/DTOs |
-
----
-
-## Pré-requisitos
-
-- **JDK 21** e **Maven**
-- **PostgreSQL** (ex.: base `finops`, utilizador com permissões nas tabelas da aplicação)
-- **RabbitMQ** acessível (host/porta/credenciais alinhados ao `application.properties` ou variáveis de ambiente)
+| Technology | Role |
+|------------|------|
+| Java **21** | Language |
+| Spring Boot **3.5.13** | Web, JPA, Security, Validation, Actuator, AMQP, Cache, AOP |
+| PostgreSQL | Database |
+| Flyway | Versioned migrations |
+| RabbitMQ | Queues (post-commit events) |
+| JJWT **0.12.6** | JWT building on login/register |
+| Caffeine | FX quote cache |
+| Resilience4j | Circuit breaker + retry on FX client |
+| Lombok | Less boilerplate on entities/DTOs |
 
 ---
 
-## Como executar
+## Prerequisites
 
-Na raiz do projeto:
+- **JDK 21** and **Maven** (or **`./mvnw`** / **`mvnw.cmd`**).
+- **PostgreSQL** reachable with a database and user matching your config (defaults below).
+- **RabbitMQ** (defaults in `application.properties`, or override via env). A **`docker-compose.yml`** in the repo starts **RabbitMQ 3** with the management UI (ports **5672** / **15672**) and user **`finops`** / password **`finops_dev_only`**.
+
+---
+
+## How to run
+
+From the project root:
 
 ```bash
 mvn spring-boot:run
 ```
 
-Ou executar a classe **`FinancialOperationsSystemApplication`** na IDE.
+Or run **`FinancialOperationsSystemApplication`** from your IDE.
 
-### Variáveis de ambiente úteis
+### Useful configuration
 
-| Variável | Descrição |
-|----------|-----------|
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Ligação PostgreSQL |
-| `JWT_SECRET` | Segredo HMAC (em produção: valor forte, ≥32 caracteres; **nunca** commitar segredo real) |
-| `JPA_DDL_AUTO` | Em produção usar tipicamente **`validate`** quando Flyway governa o esquema |
+| Variable / property | Purpose |
+|---------------------|---------|
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL JDBC URL and credentials (defaults: `jdbc:postgresql://localhost:5432/finops`, `finops_user`, `finops_pass`) |
+| `JWT_SECRET` | HMAC secret (use a strong value in production, ≥32 characters; never commit real secrets) |
+| `JPA_DDL_AUTO` | Prefer **`validate`** in production when Flyway owns the schema |
+| `APP_SECURITY_USER`, `APP_SECURITY_PASSWORD` | In-memory user bean (see `SecurityConfiguration`; not used by JWT business flows) |
 
-### Token no JSON (Postman / cliente HTTP)
+Optional: start RabbitMQ for local dev:
 
-- **Login** devolve o campo **`acessToken`** (nome atual do `LoginResponse`).
-- **Registo** devolve **`accessToken`**.
-- Rotas protegidas: cabeçalho **`Authorization: Bearer <token>`**.
+```bash
+docker compose up -d
+```
+
+### Tokens in JSON (Postman / HTTP client)
+
+- **Login** returns **`acessToken`** (field name as in `LoginResponse`—typo in code).
+- **Register** returns **`accessToken`**.
+- Protected routes: header **`Authorization: Bearer <token>`**.
 
 ---
 
-## API — resumo de rotas
+## API — route summary
 
-| Área | Rotas principais |
-|------|------------------|
+| Area | Main routes |
+|------|-------------|
 | Auth | `POST /auth/register`, `POST /auth/login` |
-| Users | `GET/POST/PATCH/DELETE /users` (ADMIN; tenant do JWT) |
-| Ordens | `POST/GET /financial-orders`, `POST .../{id}/approve`, `POST .../{id}/reject` |
-| Empresas | `POST /companies` |
+| Users | `GET` / `POST` / `PATCH` / `DELETE` `/users` (ADMIN; tenant from JWT) |
+| Orders | `POST` / `GET` `/financial-orders`, `GET /financial-orders/{id}`, `POST .../{id}/approve`, `POST .../{id}/reject` |
+| Companies | `POST /companies`, `GET /companies/{id}` (id must match JWT company) |
 | FX | `GET /fx/rate?from=&to=` |
-| Saúde | `GET /actuator/health` |
+| Health | `GET /actuator/health` |
 
-**Nota para testes manuais:** cada **`POST /auth/register`** cria uma **nova** empresa. Para adicionar colaboradores a uma empresa **já existente**, faz **login** como **ADMIN** dessa empresa e usa **`POST /users`** (o novo utilizador fica no mesmo `companyId` do token).
+**Manual testing note:** each **`POST /auth/register`** creates a **new** company. To add users to an **existing** company, **log in** as that company’s **ADMIN** and use **`POST /users`** (the new user shares the token’s `companyId`).
 
-**Sugestão de ordem no Postman:** `GET /actuator/health` → `POST /auth/login` como **ADMIN** (ou `register` se quiseres um tenant novo) → pedidos autenticados → `GET /users` → `POST /users` (ex. FINANCE) → com token **FINANCE**: criar/listar ordens (aprovar/rejeitar deve falhar **403**) → voltar a **ADMIN** para `approve`/`reject` → `GET /fx/rate` → cenários negativos (sem token, email duplicado, *soft delete* + login falhado).
+**Suggested Postman order:** `GET /actuator/health` → `POST /auth/login` as **ADMIN** (or `register` for a new tenant) → authenticated calls → `GET /users` → `POST /users` (e.g. **FINANCE**) → with a **FINANCE** token: create/list orders (approve/reject should return **403**) → switch back to **ADMIN** for approve/reject → `GET /fx/rate` → negative cases (no token, duplicate email, soft delete + failed login).
 
 ---
 
-## Testes
+## Tests
 
 ```bash
 mvn test
@@ -166,14 +174,15 @@ mvn test
 
 ---
 
-## Limitações e próximos passos (realistas)
+## Limitations and next steps
 
-- Alguns “não encontrado” ou conflitos de negócio ainda saem como **400** genérico em vez de **404**/**409** dedicados — melhoria natural com exceções específicas e handler.
-- Mudança de password por endpoint dedicado / “esqueci a password” não faz parte do escopo atual.
-- O utilizador **in-memory** (`APP_SECURITY_*` no `SecurityConfiguration`) é legado de configuração; a API real de negócio assenta no **JWT** dos utilizadores da base.
+- Some “not found” or conflict cases still surface as generic **400** responses instead of dedicated **404**/**409**—natural evolution with specific exceptions and mapping.
+- No dedicated password change or “forgot password” flow yet.
+- The **in-memory** user (`APP_SECURITY_*` in `SecurityConfiguration`) is configuration legacy; business APIs rely on **JWT** users from the database.
+- **`autoApprovalLimit`** is stored but not yet enforced when creating orders.
 
 ---
 
-## Licença
+## License
 
-Projeto de portfolio / aprendizagem; define licença explícita se publicares noutro contexto.
+Portfolio / learning project; add an explicit license if you publish it elsewhere.
