@@ -46,4 +46,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of("BAD_REQUEST", ex.getMessage()));
     }
+
+    /**
+     * FX and other integration failures use {@link IllegalStateException}; without this handler the client
+     * often received non-JSON 500 bodies and Angular logged a bare {@code HttpErrorResponse}.
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiError> illegalState(IllegalStateException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of("SERVICE_UNAVAILABLE", ex.getMessage()));
+    }
 }

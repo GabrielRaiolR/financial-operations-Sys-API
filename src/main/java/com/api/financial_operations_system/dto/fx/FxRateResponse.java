@@ -8,5 +8,7 @@ public record FxRateResponse(
         String from,
         String to,
         Instant asOf,
-        String source
+        String source,
+        /** Frankfurter {@code date} field, ISO {@code yyyy-MM-dd} (UTC calendar day of the rate). */
+        String referenceDate
 ) {}

@@ -20,7 +20,8 @@ public class FxRestClientConfig {
 
     @Bean
     @Qualifier(FRANKFURTER_REST_CLIENT)
-    public RestClient frankfurterRestClient(@Value("${app.fx.frankfurter-base-url:https://api.frankfurter.app}")String baseUrl) {
+    public RestClient frankfurterRestClient(
+            @Value("${app.fx.frankfurter-base-url:https://api.frankfurter.dev/v1}") String baseUrl) {
         ClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         ((SimpleClientHttpRequestFactory) factory).setConnectTimeout(Duration.ofSeconds(5));
         ((SimpleClientHttpRequestFactory) factory).setReadTimeout(Duration.ofSeconds(15));

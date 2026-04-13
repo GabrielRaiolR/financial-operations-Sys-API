@@ -60,7 +60,7 @@ Several **companies** share one API without seeing each other’s data: each aut
 ### FX integration (Frankfurter)
 
 - **`GET /fx/rate`**: query params **`from`** / **`to`**.
-- **RestClient**, **Caffeine** cache (TTL from config), **Resilience4j** (circuit breaker + retry) for the external **`app.fx.frankfurter-base-url`** (default `https://api.frankfurter.app`).
+- **RestClient**, **Caffeine** cache (TTL from config), **Resilience4j** (circuit breaker + retry) for the external **`app.fx.frankfurter-base-url`** (default `https://api.frankfurter.dev/v1`; evitar `api.frankfurter.app`, cujo redirect quebra time-series com `/v1` duplicado).
 
 ### Observability
 
